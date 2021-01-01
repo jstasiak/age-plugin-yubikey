@@ -11,11 +11,13 @@ mod error;
 mod p256;
 mod plugin;
 mod util;
+mod yubikey;
 
 use error::Error;
 
 const PLUGIN_NAME: &str = "age-plugin-yubikey";
 const RECIPIENT_PREFIX: &str = "age1yubikey";
+const IDENTITY_PREFIX: &str = "age-plugin-yubikey-";
 
 const USABLE_SLOTS: [RetiredSlotId; 20] = [
     RetiredSlotId::R1,
@@ -63,6 +65,72 @@ struct PluginOptions {
 
     #[options(help = "List all YubiKey keys that are compatible with age.", no_short)]
     list_all: bool,
+
+    #[options(
+        help = "Specify which YubiKey to use, if more than one is plugged in.",
+        no_short
+    )]
+    serial: Option<u32>,
+
+    #[options(
+        help = "Specify which slot to use. Defaults to first usable slot.",
+        no_short
+    )]
+    slot: Option<u8>,
+}
+
+fn identity(opts: PluginOptions) -> Result<(), Error> {
+    let serial = opts.serial.map(|s| s.into());
+    let slot = opts
+        .slot
+        .map(|slot| {
+            USABLE_SLOTS
+                .get(slot as usize - 1)
+                .cloned()
+                .ok_or(Error::InvalidSlot(slot))
+        })
+        .transpose()?;
+
+    let mut yubikey = yubikey::open(serial)?;
+
+    let mut keys = Key::list(&mut yubikey)?.into_iter().filter_map(|key| {
+        // - We only use the retired slots.
+        // - Only P-256 keys are compatible with us.
+        match (key.slot(), key.certificate().subject_pki()) {
+            (SlotId::Retired(slot), PublicKeyInfo::EcP256(pubkey)) => {
+                p256::Recipient::from_pubkey(*pubkey).map(|r| (key, slot, r))
+            }
+            _ => None,
+        }
+    });
+
+    let (key, slot, recipient) = if let Some(slot) = slot {
+        keys.find(|(_, s, _)| s == &slot)
+            .ok_or(Error::SlotHasNoIdentity(slot))
+    } else {
+        let mut keys = keys.filter(|(key, _, _)| {
+            let (_, cert) = x509_parser::parse_x509_der(key.certificate().as_ref()).unwrap();
+            let mut org = cert.subject().iter_organization();
+            match org.next() {
+                Some(org) => org.as_str() == Ok(PLUGIN_NAME),
+                _ => false,
+            }
+        });
+        match (keys.next(), keys.next()) {
+            (None, None) => Err(Error::NoIdentities),
+            (Some(key), None) => Ok(key),
+            (Some(_), Some(_)) => Err(Error::MultipleIdentities),
+            (None, Some(_)) => unreachable!(),
+        }
+    }?;
+
+    let stub = yubikey::Stub::new(yubikey.serial(), slot, &recipient);
+    let (_, cert) = x509_parser::parse_x509_der(key.certificate().as_ref()).unwrap();
+    let created = cert.validity().not_before.to_rfc2822();
+
+    util::print_identity(stub, recipient, &created);
+
+    Ok(())
 }
 
 fn list(all: bool) -> Result<(), Error> {
@@ -138,7 +206,7 @@ fn main() -> Result<(), Error> {
     } else if opts.generate {
         todo!()
     } else if opts.identity {
-        todo!()
+        identity(opts)
     } else if opts.list {
         list(false)
     } else if opts.list_all {

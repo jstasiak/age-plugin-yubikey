@@ -1,9 +1,13 @@
 use bech32::ToBase32;
 use elliptic_curve::sec1::EncodedPoint;
 use p256::NistP256;
+use sha2::{Digest, Sha256};
+use std::convert::TryInto;
 use std::fmt;
 
 use crate::RECIPIENT_PREFIX;
+
+pub(crate) const TAG_BYTES: usize = 4;
 
 /// Wrapper around a compressed secp256r1 curve point.
 #[derive(Clone)]
@@ -36,5 +40,10 @@ impl Recipient {
 
     pub(crate) fn to_string(&self) -> String {
         bech32::encode(RECIPIENT_PREFIX, self.as_bytes().to_base32()).expect("HRP is valid")
+    }
+
+    pub(crate) fn tag(&self) -> [u8; TAG_BYTES] {
+        let tag = Sha256::digest(self.to_string().as_bytes());
+        (&tag[0..TAG_BYTES]).try_into().expect("length is correct")
     }
 }
