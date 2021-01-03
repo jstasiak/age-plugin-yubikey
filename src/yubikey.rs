@@ -1,9 +1,11 @@
 //! Structs for handling YubiKeys.
 
 use bech32::ToBase32;
+use dialoguer::Password;
+use std::convert::TryFrom;
 use std::thread::sleep;
 use std::time::{Duration, SystemTime};
-use yubikey_piv::{key::RetiredSlotId, yubikey::Serial, Readers, YubiKey};
+use yubikey_piv::{key::RetiredSlotId, yubikey::Serial, MgmKey, Readers, YubiKey};
 
 use crate::{
     error::Error,
@@ -67,6 +69,46 @@ pub(crate) fn open(serial: Option<Serial>) -> Result<YubiKey, Error> {
     };
 
     Ok(yubikey)
+}
+
+pub(crate) fn manage(yubikey: &mut YubiKey) -> Result<(), Error> {
+    let pin = Password::new()
+        .with_prompt(&format!(
+            "🔤 Enter PIN for YubiKey with serial {} (default is 123456)",
+            yubikey.serial(),
+        ))
+        .interact()?;
+    yubikey.verify_pin(pin.as_bytes())?;
+
+    // TODO: If the user is using the default PIN, change it.
+
+    // Try to authenticate with the default management key.
+    // TODO: If the YubiKey is using the default management key, migrate it to a
+    // PIN-protected management key.
+    if yubikey.authenticate(MgmKey::default()).is_err() {
+        // Management key has been changed; ask the user to provide it.
+        let mgm_input = Password::new()
+            .with_prompt("🔐 Enter the management key as a hex string")
+            .interact()?;
+
+        let mgm_key = match hex::decode(mgm_input) {
+            Ok(mgm_bytes) => match MgmKey::try_from(&mgm_bytes[..]) {
+                Ok(mgm_key) => mgm_key,
+                Err(_) => {
+                    eprintln!("Incorrect management key size");
+                    return Ok(());
+                }
+            },
+            Err(_) => {
+                eprintln!("Management key must be a hex string");
+                return Ok(());
+            }
+        };
+
+        yubikey.authenticate(mgm_key)?;
+    }
+
+    Ok(())
 }
 
 /// A reference to an age key stored in a YubiKey.
