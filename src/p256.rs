@@ -20,6 +20,13 @@ impl fmt::Debug for Recipient {
 }
 
 impl Recipient {
+    /// Attempts to parse a valid secp256r1 public key from a byte slice.
+    ///
+    /// The slice must contain an SEC-1-encoded public key.
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        Self::from_pubkey(EncodedPoint::from_bytes(bytes).ok()?)
+    }
+
     /// Attempts to parse a valid secp256r1 public key from its SEC-1 encoding.
     pub(crate) fn from_pubkey(pubkey: EncodedPoint<NistP256>) -> Option<Self> {
         if pubkey.is_compressed() {
@@ -45,5 +52,10 @@ impl Recipient {
     pub(crate) fn tag(&self) -> [u8; TAG_BYTES] {
         let tag = Sha256::digest(self.to_string().as_bytes());
         (&tag[0..TAG_BYTES]).try_into().expect("length is correct")
+    }
+
+    /// Returns the uncompressed SEC-1 encoding of this public key.
+    pub(crate) fn decompress(&self) -> EncodedPoint<NistP256> {
+        self.0.decompress().unwrap()
     }
 }
