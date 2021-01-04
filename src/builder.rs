@@ -1,4 +1,5 @@
 use rand::{rngs::OsRng, RngCore};
+use x509::RdnType;
 use yubikey_piv::{
     certificate::{Certificate, PublicKeyInfo},
     key::{generate as yubikey_generate, AlgorithmId, RetiredSlotId, SlotId},
@@ -9,8 +10,9 @@ use yubikey_piv::{
 use crate::{
     error::Error,
     p256::Recipient,
+    util::POLICY_EXTENSION_OID,
     yubikey::{self, Stub},
-    USABLE_SLOTS,
+    PLUGIN_NAME, USABLE_SLOTS,
 };
 
 const DEFAULT_PIN_POLICY: PinPolicy = PinPolicy::Once;
@@ -109,25 +111,42 @@ impl IdentityBuilder {
             touch_policy,
         )?;
 
-        // Pick a random serial for the new self-signed certificate.
-        let mut serial = [0; 20];
-        OsRng.fill_bytes(&mut serial);
-
-        let cert = Certificate::generate_self_signed(
-            yubikey,
-            SlotId::Retired(slot),
-            serial,
-            None,
-            "age-plugin-yubikey".to_owned(),
-            generated,
-        )?;
-
-        let recipient = match cert.subject_pki() {
+        let recipient = match &generated {
             PublicKeyInfo::EcP256(pubkey) => {
                 Recipient::from_pubkey(*pubkey).expect("YubiKey generates a valid pubkey")
             }
             _ => unreachable!(),
         };
+        let stub = Stub::new(yubikey.serial(), slot, &recipient);
+
+        // Pick a random serial for the new self-signed certificate.
+        let mut serial = [0; 20];
+        OsRng.fill_bytes(&mut serial);
+
+        let name = self
+            .name
+            .unwrap_or(format!("age identity {}", hex::encode(stub.tag)));
+
+        Certificate::generate_self_signed(
+            yubikey,
+            SlotId::Retired(slot),
+            serial,
+            None,
+            vec![
+                (RdnType::Organization, PLUGIN_NAME.parse().unwrap()),
+                // TODO: Validate these two
+                (
+                    RdnType::OrganizationUnit,
+                    env!("CARGO_PKG_VERSION").parse().unwrap(),
+                ),
+                (RdnType::CommonName, name.parse().unwrap()),
+            ],
+            generated,
+            vec![(
+                POLICY_EXTENSION_OID,
+                &[pin_policy.into(), touch_policy.into()],
+            )],
+        )?;
 
         Ok((
             Stub::new(yubikey.serial(), slot, &recipient),

@@ -24,9 +24,12 @@ hex = "0.4"
 p256 = "0.5"
 rand = "0.7"
 sha2 = "0.9"
+x509 = "0.1.2"
 x509-parser = "0.8"
 yubikey-piv = { version = "0.1", features = ["untested"] }
 
 [patch.crates-io]
 age-core = { git = "https://github.com/str4d/rage.git", rev = "d8fd951e059d9f7116b2b9dd0d176798a11b49f3" }
 age-plugin = { git = "https://github.com/str4d/rage.git", rev = "d8fd951e059d9f7116b2b9dd0d176798a11b49f3" }
+x509 = { git = "https://github.com/str4d/x509.rs", branch = "twitch" }
+yubikey-piv = { git = "https://github.com/str4d/yubikey-piv.rs", branch = "twitch" }

@@ -7,7 +7,7 @@ use yubikey_piv::{
 
 use crate::{error::Error, p256::Recipient, yubikey::Stub, PLUGIN_NAME};
 
-const POLICY_EXTENSION_OID: &[u64] = &[1, 3, 6, 1, 4, 1, 41482, 3, 8];
+pub(crate) const POLICY_EXTENSION_OID: &[u64] = &[1, 3, 6, 1, 4, 1, 41482, 3, 8];
 
 pub(crate) fn pin_policy_from_string(s: String) -> Result<PinPolicy, Error> {
     match s.as_str() {
