@@ -98,7 +98,8 @@ pub(crate) fn manage(yubikey: &mut YubiKey) -> Result<(), Error> {
     // Try to authenticate with the default management key.
     // TODO: If the YubiKey is using the default management key, migrate it to a
     // PIN-protected management key.
-    if yubikey.authenticate(MgmKey::default()).is_err() {
+    let mgm_key = MgmKey::get_protected(yubikey).unwrap_or_default();
+    if yubikey.authenticate(mgm_key).is_err() {
         // Management key has been changed; ask the user to provide it.
         let mgm_input = Password::new()
             .with_prompt("🔐 Enter the management key as a hex string")
